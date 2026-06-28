@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { Alert } from 'react-native'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
@@ -21,8 +22,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Failed to retrieve session:', error.message)
+      }
       setSession(session)
+      setLoading(false)
+    }).catch((err) => {
+      console.error('Unexpected error retrieving session:', err)
       setLoading(false)
     })
 
@@ -34,7 +41,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      Alert.alert('Sign out failed', error.message)
+    }
   }
 
   return (

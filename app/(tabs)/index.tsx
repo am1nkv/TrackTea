@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
@@ -34,11 +34,16 @@ export default function DashboardScreen() {
       return new Date(d.setDate(diff)).toISOString()
     })()
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('drinks')
       .select('*')
       .gte('consumed_at', startOfMonth)
       .order('consumed_at', { ascending: false })
+
+    if (error) {
+      Alert.alert('Failed to load drinks', error.message)
+      return
+    }
 
     if (!data) return
 
