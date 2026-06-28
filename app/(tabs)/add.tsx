@@ -40,28 +40,36 @@ export default function AddDrinkScreen() {
   const basketPulse = useRef(new Animated.Value(1)).current
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: 'images',
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
-    })
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+      })
 
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri)
+      if (!result.canceled) {
+        setImageUri(result.assets[0].uri)
+      }
+    } catch (err) {
+      Alert.alert('Camera error', err instanceof Error ? err.message : 'Could not open camera.')
     }
   }
 
   const pickFromLibrary = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
-    })
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+      })
 
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri)
+      if (!result.canceled) {
+        setImageUri(result.assets[0].uri)
+      }
+    } catch (err) {
+      Alert.alert('Library error', err instanceof Error ? err.message : 'Could not open photo library.')
     }
   }
 
@@ -89,58 +97,77 @@ export default function AddDrinkScreen() {
   }
 
   const handleAdd = async () => {
+    if (!user) return
     if (!sugarGrams || !price) {
       Alert.alert('Missing info', 'Please enter sugar amount and price.')
       return
     }
-    if (isNaN(Number(sugarGrams)) || isNaN(Number(price))) {
-      Alert.alert('Invalid values', 'Sugar and price must be numbers.')
+    const sugarNum = Number(sugarGrams)
+    const priceNum = Number(price)
+    if (isNaN(sugarNum) || isNaN(priceNum) || !isFinite(sugarNum) || !isFinite(priceNum)) {
+      Alert.alert('Invalid values', 'Sugar and price must be valid numbers.')
+      return
+    }
+    if (sugarNum < 0 || sugarNum > 500) {
+      Alert.alert('Invalid sugar', 'Sugar must be between 0 and 500 grams.')
+      return
+    }
+    if (priceNum < 0 || priceNum > 1000) {
+      Alert.alert('Invalid price', 'Price must be between $0 and $1000.')
       return
     }
 
     setLoading(true)
 
-    if (imageUri) {
-      await runDropAnimation()
-    }
+    try {
+      if (imageUri) {
+        await runDropAnimation()
+      }
 
-    let imageUrl: string | undefined
+      let imageUrl: string | undefined
 
-    if (imageUri) {
-      const fileName = `${user?.id}/${Date.now()}.jpg`
-      const response = await fetch(imageUri)
-      const blob = await response.blob()
-      const arrayBuffer = await blob.arrayBuffer()
+      if (imageUri) {
+        const fileName = `${user.id}/${Date.now()}.jpg`
+        const response = await fetch(imageUri)
+        const blob = await response.blob()
+        const arrayBuffer = await blob.arrayBuffer()
 
-      const { error: uploadError } = await supabase.storage
-        .from('drink-photos')
-        .upload(fileName, arrayBuffer, { contentType: 'image/jpeg' })
+        const { error: uploadError } = await supabase.storage
+          .from('drink-photos')
+          .upload(fileName, arrayBuffer, { contentType: 'image/jpeg' })
 
-      if (!uploadError) {
+        if (uploadError) {
+          Alert.alert('Upload failed', uploadError.message)
+          setLoading(false)
+          return
+        }
+
         const { data } = supabase.storage.from('drink-photos').getPublicUrl(fileName)
         imageUrl = data.publicUrl
       }
-    }
 
-    const { error } = await supabase.from('drinks').insert({
-      user_id: user?.id,
-      type,
-      sugar_grams: Number(sugarGrams),
-      price: Number(price),
-      image_url: imageUrl,
-      is_public: false,
-      consumed_at: new Date().toISOString(),
-    })
+      const { error } = await supabase.from('drinks').insert({
+        user_id: user.id,
+        type,
+        sugar_grams: sugarNum,
+        price: priceNum,
+        image_url: imageUrl,
+        is_public: false,
+        consumed_at: new Date().toISOString(),
+      })
 
-    setLoading(false)
-
-    if (error) {
-      Alert.alert('Error', error.message)
-    } else {
-      setSugarGrams('')
-      setPrice('')
-      setImageUri(null)
-      Alert.alert('Added!', 'Your drink has been logged.')
+      if (error) {
+        Alert.alert('Error', error.message)
+      } else {
+        setSugarGrams('')
+        setPrice('')
+        setImageUri(null)
+        Alert.alert('Added!', 'Your drink has been logged.')
+      }
+    } catch (err) {
+      Alert.alert('Unexpected error', err instanceof Error ? err.message : 'Something went wrong.')
+    } finally {
+      setLoading(false)
     }
   }
 

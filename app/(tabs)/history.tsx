@@ -1,15 +1,24 @@
 import { useCallback, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { Colors, FontSize, Radius, Spacing } from '../../constants/theme'
-import { Drink, DRINK_EMOJIS, DRINK_LABELS } from '../../types'
-import { formatDateWithWeekday } from '../../lib/utils'
+import { cardShadow, SharedStyles } from '../../constants/styles'
+import { Drink } from '../../types'
+import { formatDate } from '../../lib/formatDate'
+import { DrinkRow } from '../../components/ui/DrinkRow'
+import { EmptyState } from '../../components/ui/EmptyState'
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+const historyDateFormat: Intl.DateTimeFormatOptions = {
+  weekday: 'short', month: 'short', day: 'numeric',
+}
+
 export default function HistoryScreen() {
+  const { user } = useAuth()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -17,16 +26,22 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(false)
 
   const fetchHistory = async (y: number, m: number) => {
+    if (!user) return
     setLoading(true)
     const start = new Date(y, m, 1).toISOString()
     const end = new Date(y, m + 1, 0, 23, 59, 59).toISOString()
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('drinks')
       .select('*')
+      .eq('user_id', user.id)
       .gte('consumed_at', start)
       .lte('consumed_at', end)
       .order('consumed_at', { ascending: false })
+
+    if (error) {
+      Alert.alert('Failed to load history', error.message)
+    }
 
     setDrinks(data ?? [])
     setLoading(false)
@@ -51,7 +66,7 @@ export default function HistoryScreen() {
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={SharedStyles.screenContainer}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>History</Text>
 
@@ -88,24 +103,15 @@ export default function HistoryScreen() {
         {loading ? (
           <Text style={styles.loadingText}>Loading...</Text>
         ) : drinks.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>📭</Text>
-            <Text style={styles.emptyText}>No drinks logged in {MONTH_NAMES[month]}</Text>
-          </View>
+          <EmptyState emoji="📭" message={`No drinks logged in ${MONTH_NAMES[month]}`} />
         ) : (
           <View style={styles.list}>
             {drinks.map(drink => (
-              <View key={drink.id} style={styles.drinkRow}>
-                <Text style={styles.drinkEmoji}>{DRINK_EMOJIS[drink.type]}</Text>
-                <View style={styles.drinkInfo}>
-                  <Text style={styles.drinkName}>{DRINK_LABELS[drink.type]}</Text>
-                  <Text style={styles.drinkDate}>{formatDateWithWeekday(drink.consumed_at)}</Text>
-                </View>
-                <View style={styles.drinkMeta}>
-                  <Text style={styles.drinkSugar}>{drink.sugar_grams}g</Text>
-                  <Text style={styles.drinkPrice}>${drink.price.toFixed(2)}</Text>
-                </View>
-              </View>
+              <DrinkRow
+                key={drink.id}
+                drink={drink}
+                formatDate={(iso) => formatDate(iso, historyDateFormat)}
+              />
             ))}
           </View>
         )}
@@ -115,7 +121,6 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
   scroll: { padding: Spacing.lg, gap: Spacing.lg, paddingBottom: Spacing.xxl },
   title: { fontSize: FontSize.xxl, fontWeight: '700', color: Colors.text },
   navigator: {
@@ -125,11 +130,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    ...cardShadow,
   },
   navBtn: { padding: Spacing.sm },
   navBtnDisabled: { opacity: 0.3 },
@@ -141,11 +142,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    ...cardShadow,
   },
   summaryItem: { flex: 1, alignItems: 'center', gap: 4 },
   summaryValue: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
@@ -153,27 +150,4 @@ const styles = StyleSheet.create({
   divider: { width: 1, backgroundColor: Colors.border },
   list: { gap: Spacing.sm },
   loadingText: { textAlign: 'center', color: Colors.textSecondary, fontSize: FontSize.sm },
-  empty: { alignItems: 'center', padding: Spacing.xxl, gap: Spacing.sm },
-  emptyEmoji: { fontSize: 48 },
-  emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
-  drinkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    gap: Spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  drinkEmoji: { fontSize: 28 },
-  drinkInfo: { flex: 1 },
-  drinkName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
-  drinkDate: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  drinkMeta: { alignItems: 'flex-end' },
-  drinkSugar: { fontSize: FontSize.md, fontWeight: '700', color: Colors.sugar },
-  drinkPrice: { fontSize: FontSize.xs, color: Colors.textSecondary },
 })

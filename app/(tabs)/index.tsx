@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useCallback, useState } from 'react'
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Colors, FontSize, MONTHLY_SUGAR_LIMIT, Radius, Spacing } from '../../constants/theme'
-import { Drink, DRINK_EMOJIS, DRINK_LABELS, MonthlyStats, WeeklyData } from '../../types'
-import { getTimeOfDay, formatDateShort, computeMonthlyStats, computeWeeklyData, getStartOfMonth, getStartOfWeek, getGaugeColor } from '../../lib/utils'
+import { cardShadow, SharedStyles } from '../../constants/styles'
+import { Drink, MonthlyStats, WeeklyData } from '../../types'
+import { formatDate } from '../../lib/formatDate'
+import { DrinkRow } from '../../components/ui/DrinkRow'
+import { EmptyState } from '../../components/ui/EmptyState'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+const dashboardDateFormat: Intl.DateTimeFormatOptions = {
+  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+}
 
 export default function DashboardScreen() {
   const { user, signOut } = useAuth()
@@ -18,15 +25,22 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchData = async () => {
+    if (!user) return
     const now = new Date()
     const startOfMonth = getStartOfMonth(now)
     const startOfWeek_ = getStartOfWeek(now)
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('drinks')
       .select('*')
+      .eq('user_id', user.id)
       .gte('consumed_at', startOfMonth)
       .order('consumed_at', { ascending: false })
+
+    if (error) {
+      Alert.alert('Failed to load drinks', error.message)
+      return
+    }
 
     if (!data) return
 
@@ -53,7 +67,7 @@ export default function DashboardScreen() {
     : Colors.error
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={SharedStyles.screenContainer}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
@@ -69,7 +83,7 @@ export default function DashboardScreen() {
         </View>
 
         {/* Monthly Sugar Gauge */}
-        <View style={styles.card}>
+        <View style={SharedStyles.card}>
           <Text style={styles.cardTitle}>Monthly Sugar</Text>
           <View style={styles.gaugeRow}>
             <Text style={[styles.gaugeValue, { color: gaugeColor }]}>
@@ -106,7 +120,7 @@ export default function DashboardScreen() {
         </View>
 
         {/* Weekly Chart */}
-        <View style={styles.card}>
+        <View style={SharedStyles.card}>
           <Text style={styles.cardTitle}>This Week</Text>
           <View style={styles.chart}>
             {weeklyData.map(({ day, sugar_grams }) => (
@@ -131,23 +145,14 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Drinks</Text>
           {drinks.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>🧋</Text>
-              <Text style={styles.emptyText}>No drinks logged this month</Text>
-            </View>
+            <EmptyState emoji="🧋" message="No drinks logged this month" />
           ) : (
             drinks.slice(0, 5).map(drink => (
-              <View key={drink.id} style={styles.drinkRow}>
-                <Text style={styles.drinkEmoji}>{DRINK_EMOJIS[drink.type]}</Text>
-                <View style={styles.drinkInfo}>
-                  <Text style={styles.drinkName}>{DRINK_LABELS[drink.type]}</Text>
-                  <Text style={styles.drinkDate}>{formatDateShort(drink.consumed_at)}</Text>
-                </View>
-                <View style={styles.drinkMeta}>
-                  <Text style={styles.drinkSugar}>{drink.sugar_grams}g</Text>
-                  <Text style={styles.drinkPrice}>${drink.price.toFixed(2)}</Text>
-                </View>
-              </View>
+              <DrinkRow
+                key={drink.id}
+                drink={drink}
+                formatDate={(iso) => formatDate(iso, dashboardDateFormat)}
+              />
             ))
           )}
         </View>
@@ -157,26 +162,13 @@ export default function DashboardScreen() {
 }
 
 
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
   scroll: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxl },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.sm },
   greeting: { fontSize: FontSize.sm, color: Colors.textSecondary },
   email: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
   signOutBtn: { padding: Spacing.sm },
   signOutText: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    gap: Spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
   cardTitle: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   gaugeRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.xs },
   gaugeValue: { fontSize: FontSize.xxxl, fontWeight: '700' },
@@ -191,11 +183,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: Spacing.md,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    ...cardShadow,
   },
   statValue: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
   statLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
@@ -208,27 +196,4 @@ const styles = StyleSheet.create({
   barLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: '500' },
   section: { gap: Spacing.sm },
   sectionTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
-  empty: { alignItems: 'center', padding: Spacing.xl, gap: Spacing.sm },
-  emptyEmoji: { fontSize: 40 },
-  emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  drinkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    gap: Spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  drinkEmoji: { fontSize: 28 },
-  drinkInfo: { flex: 1 },
-  drinkName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
-  drinkDate: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  drinkMeta: { alignItems: 'flex-end' },
-  drinkSugar: { fontSize: FontSize.md, fontWeight: '700', color: Colors.sugar },
-  drinkPrice: { fontSize: FontSize.xs, color: Colors.textSecondary },
 })
