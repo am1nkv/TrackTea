@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Colors, FontSize, MONTHLY_SUGAR_LIMIT, Radius, Spacing } from '../../constants/theme'
 import { Drink, DRINK_EMOJIS, DRINK_LABELS, MonthlyStats, WeeklyData } from '../../types'
+import { getTimeOfDay, formatDateShort, computeMonthlyStats, computeWeeklyData, getStartOfMonth, getStartOfWeek, getGaugeColor } from '../../lib/utils'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -18,13 +19,8 @@ export default function DashboardScreen() {
 
   const fetchData = async () => {
     const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-    const startOfWeek = (() => {
-      const d = new Date()
-      const day = d.getDay()
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-      return new Date(d.setDate(diff)).toISOString()
-    })()
+    const startOfMonth = getStartOfMonth(now)
+    const startOfWeek_ = getStartOfWeek(now)
 
     const { data } = await supabase
       .from('drinks')
@@ -35,26 +31,8 @@ export default function DashboardScreen() {
     if (!data) return
 
     setDrinks(data)
-
-    const totals = data.reduce(
-      (acc, d) => ({
-        total_sugar: acc.total_sugar + (d.sugar_grams ?? 0),
-        total_spent: acc.total_spent + (d.price ?? 0),
-        drink_count: acc.drink_count + 1,
-      }),
-      { total_sugar: 0, total_spent: 0, drink_count: 0 }
-    )
-    setStats(totals)
-
-    const weeklyMap: Record<string, number> = {}
-    data
-      .filter(d => d.consumed_at >= startOfWeek)
-      .forEach(d => {
-        const day = DAYS[new Date(d.consumed_at).getDay() === 0 ? 6 : new Date(d.consumed_at).getDay() - 1]
-        weeklyMap[day] = (weeklyMap[day] ?? 0) + d.sugar_grams
-      })
-
-    setWeeklyData(DAYS.map(d => ({ day: d, sugar_grams: weeklyMap[d] ?? 0 })))
+    setStats(computeMonthlyStats(data))
+    setWeeklyData(computeWeeklyData(data, startOfWeek_))
   }
 
   useFocusEffect(useCallback(() => { fetchData() }, []))
@@ -163,7 +141,7 @@ export default function DashboardScreen() {
                 <Text style={styles.drinkEmoji}>{DRINK_EMOJIS[drink.type]}</Text>
                 <View style={styles.drinkInfo}>
                   <Text style={styles.drinkName}>{DRINK_LABELS[drink.type]}</Text>
-                  <Text style={styles.drinkDate}>{formatDate(drink.consumed_at)}</Text>
+                  <Text style={styles.drinkDate}>{formatDateShort(drink.consumed_at)}</Text>
                 </View>
                 <View style={styles.drinkMeta}>
                   <Text style={styles.drinkSugar}>{drink.sugar_grams}g</Text>
@@ -178,16 +156,7 @@ export default function DashboardScreen() {
   )
 }
 
-function getTimeOfDay() {
-  const h = new Date().getHours()
-  if (h < 12) return 'morning'
-  if (h < 17) return 'afternoon'
-  return 'evening'
-}
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },

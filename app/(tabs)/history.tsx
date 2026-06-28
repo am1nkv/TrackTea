@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { Colors, FontSize, Radius, Spacing } from '../../constants/theme'
 import { Drink, DRINK_EMOJIS, DRINK_LABELS } from '../../types'
+import { formatDateWithWeekday } from '../../lib/utils'
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -98,7 +99,7 @@ export default function HistoryScreen() {
                 <Text style={styles.drinkEmoji}>{DRINK_EMOJIS[drink.type]}</Text>
                 <View style={styles.drinkInfo}>
                   <Text style={styles.drinkName}>{DRINK_LABELS[drink.type]}</Text>
-                  <Text style={styles.drinkDate}>{formatDate(drink.consumed_at)}</Text>
+                  <Text style={styles.drinkDate}>{formatDateWithWeekday(drink.consumed_at)}</Text>
                 </View>
                 <View style={styles.drinkMeta}>
                   <Text style={styles.drinkSugar}>{drink.sugar_grams}g</Text>
@@ -111,10 +112,6 @@ export default function HistoryScreen() {
       </ScrollView>
     </SafeAreaView>
   )
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 const styles = StyleSheet.create({
