@@ -3,12 +3,14 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { Colors, FontSize, Radius, Spacing } from '../../constants/theme'
 import { Drink, DRINK_EMOJIS, DRINK_LABELS } from '../../types'
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export default function HistoryScreen() {
+  const { user } = useAuth()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -16,6 +18,7 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(false)
 
   const fetchHistory = async (y: number, m: number) => {
+    if (!user) return
     setLoading(true)
     const start = new Date(y, m, 1).toISOString()
     const end = new Date(y, m + 1, 0, 23, 59, 59).toISOString()
@@ -23,6 +26,7 @@ export default function HistoryScreen() {
     const { data, error } = await supabase
       .from('drinks')
       .select('*')
+      .eq('user_id', user.id)
       .gte('consumed_at', start)
       .lte('consumed_at', end)
       .order('consumed_at', { ascending: false })

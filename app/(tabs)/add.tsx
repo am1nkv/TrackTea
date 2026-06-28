@@ -97,12 +97,23 @@ export default function AddDrinkScreen() {
   }
 
   const handleAdd = async () => {
+    if (!user) return
     if (!sugarGrams || !price) {
       Alert.alert('Missing info', 'Please enter sugar amount and price.')
       return
     }
-    if (isNaN(Number(sugarGrams)) || isNaN(Number(price))) {
-      Alert.alert('Invalid values', 'Sugar and price must be numbers.')
+    const sugarNum = Number(sugarGrams)
+    const priceNum = Number(price)
+    if (isNaN(sugarNum) || isNaN(priceNum) || !isFinite(sugarNum) || !isFinite(priceNum)) {
+      Alert.alert('Invalid values', 'Sugar and price must be valid numbers.')
+      return
+    }
+    if (sugarNum < 0 || sugarNum > 500) {
+      Alert.alert('Invalid sugar', 'Sugar must be between 0 and 500 grams.')
+      return
+    }
+    if (priceNum < 0 || priceNum > 1000) {
+      Alert.alert('Invalid price', 'Price must be between $0 and $1000.')
       return
     }
 
@@ -116,7 +127,7 @@ export default function AddDrinkScreen() {
       let imageUrl: string | undefined
 
       if (imageUri) {
-        const fileName = `${user?.id}/${Date.now()}.jpg`
+        const fileName = `${user.id}/${Date.now()}.jpg`
         const response = await fetch(imageUri)
         const blob = await response.blob()
         const arrayBuffer = await blob.arrayBuffer()
@@ -136,10 +147,10 @@ export default function AddDrinkScreen() {
       }
 
       const { error } = await supabase.from('drinks').insert({
-        user_id: user?.id,
+        user_id: user.id,
         type,
-        sugar_grams: Number(sugarGrams),
-        price: Number(price),
+        sugar_grams: sugarNum,
+        price: priceNum,
         image_url: imageUrl,
         is_public: false,
         consumed_at: new Date().toISOString(),

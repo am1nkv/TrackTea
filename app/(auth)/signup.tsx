@@ -17,6 +17,11 @@ export default function SignupScreen() {
       Alert.alert('Missing fields', 'Please fill in all fields.')
       return
     }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailPattern.test(email.trim())) {
+      Alert.alert('Invalid email', 'Please enter a valid email address.')
+      return
+    }
     if (password !== confirm) {
       Alert.alert('Password mismatch', 'Passwords do not match.')
       return
@@ -27,7 +32,7 @@ export default function SignupScreen() {
     }
 
     setLoading(true)
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signUp({ email: email.trim(), password })
     if (error) {
       Alert.alert('Signup failed', error.message)
     } else {
