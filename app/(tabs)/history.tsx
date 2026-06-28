@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
@@ -20,12 +20,16 @@ export default function HistoryScreen() {
     const start = new Date(y, m, 1).toISOString()
     const end = new Date(y, m + 1, 0, 23, 59, 59).toISOString()
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('drinks')
       .select('*')
       .gte('consumed_at', start)
       .lte('consumed_at', end)
       .order('consumed_at', { ascending: false })
+
+    if (error) {
+      Alert.alert('Failed to load history', error.message)
+    }
 
     setDrinks(data ?? [])
     setLoading(false)
