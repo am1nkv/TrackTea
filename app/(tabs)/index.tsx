@@ -25,6 +25,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchData = async () => {
+    if (!user) return
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const startOfWeek = (() => {
@@ -37,6 +38,7 @@ export default function DashboardScreen() {
     const { data, error } = await supabase
       .from('drinks')
       .select('*')
+      .eq('user_id', user.id)
       .gte('consumed_at', startOfMonth)
       .order('consumed_at', { ascending: false })
 
