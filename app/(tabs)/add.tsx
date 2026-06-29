@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -20,6 +20,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Colors, FontSize, Radius, Spacing } from '../../constants/theme'
 import { DRINK_EMOJIS, DRINK_LABELS, DrinkType } from '../../types'
+import { analyzeDrinkImage, DrinkAnalysisResult, isGeminiConfigured } from '../../lib/gemini'
 
 const DRINK_TYPES: DrinkType[] = ['matcha', 'bubble_tea', 'coffee', 'juice', 'other']
 const { height: SCREEN_HEIGHT } = Dimensions.get('window')
@@ -33,11 +34,35 @@ export default function AddDrinkScreen() {
   const [loading, setLoading] = useState(false)
   const [animating, setAnimating] = useState(false)
 
+  // AI analysis state
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<DrinkAnalysisResult | null>(null)
+  const [analysisDismissed, setAnalysisDismissed] = useState(false)
+
   const imageY = useRef(new Animated.Value(0)).current
   const imageOpacity = useRef(new Animated.Value(1)).current
   const imageScale = useRef(new Animated.Value(1)).current
   const imageX = useRef(new Animated.Value(0)).current
   const basketPulse = useRef(new Animated.Value(1)).current
+
+  const analyzeImage = async (uri: string) => {
+    if (!isGeminiConfigured()) return
+
+    setAnalyzing(true)
+    setAnalysisResult(null)
+    setAnalysisDismissed(false)
+
+    try {
+      const result = await analyzeDrinkImage(uri)
+      setAnalysisResult(result)
+      setSugarGrams(String(result.sugarGrams))
+    } catch (err) {
+      console.warn('AI analysis failed:', err)
+      // Don't show error to user - AI is optional enhancement
+    } finally {
+      setAnalyzing(false)
+    }
+  }
 
   const pickImage = async () => {
     try {
@@ -49,7 +74,9 @@ export default function AddDrinkScreen() {
       })
 
       if (!result.canceled) {
-        setImageUri(result.assets[0].uri)
+        const uri = result.assets[0].uri
+        setImageUri(uri)
+        analyzeImage(uri)
       }
     } catch (err) {
       Alert.alert('Camera error', err instanceof Error ? err.message : 'Could not open camera.')
@@ -66,7 +93,9 @@ export default function AddDrinkScreen() {
       })
 
       if (!result.canceled) {
-        setImageUri(result.assets[0].uri)
+        const uri = result.assets[0].uri
+        setImageUri(uri)
+        analyzeImage(uri)
       }
     } catch (err) {
       Alert.alert('Library error', err instanceof Error ? err.message : 'Could not open photo library.')
@@ -162,12 +191,30 @@ export default function AddDrinkScreen() {
         setSugarGrams('')
         setPrice('')
         setImageUri(null)
+        setAnalysisResult(null)
+        setAnalysisDismissed(false)
         Alert.alert('Added!', 'Your drink has been logged.')
       }
     } catch (err) {
       Alert.alert('Unexpected error', err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const confidenceColor = (confidence: DrinkAnalysisResult['confidence']) => {
+    switch (confidence) {
+      case 'high': return Colors.success
+      case 'medium': return Colors.sugar
+      case 'low': return Colors.error
+    }
+  }
+
+  const confidenceLabel = (confidence: DrinkAnalysisResult['confidence']) => {
+    switch (confidence) {
+      case 'high': return 'High confidence'
+      case 'medium': return 'Medium confidence'
+      case 'low': return 'Estimate only'
     }
   }
 
@@ -201,7 +248,9 @@ export default function AddDrinkScreen() {
 
           {/* Photo Section with animation overlay */}
           <View style={styles.section}>
-            <Text style={styles.label}>Photo (optional)</Text>
+            <Text style={styles.label}>
+              Photo {isGeminiConfigured() ? '(AI will estimate sugar)' : '(optional)'}
+            </Text>
             <View style={styles.photoArea}>
               {imageUri ? (
                 <View style={styles.imageWrapper}>
@@ -220,7 +269,11 @@ export default function AddDrinkScreen() {
                     ]}
                   />
                   {!animating && (
-                    <Pressable style={styles.removePhoto} onPress={() => setImageUri(null)}>
+                    <Pressable style={styles.removePhoto} onPress={() => {
+                      setImageUri(null)
+                      setAnalysisResult(null)
+                      setAnalysisDismissed(false)
+                    }}>
                       <Text style={styles.removePhotoText}>✕</Text>
                     </Pressable>
                   )}
@@ -240,12 +293,55 @@ export default function AddDrinkScreen() {
             </View>
           </View>
 
+          {/* AI Analysis Result */}
+          {analyzing && (
+            <View style={styles.analysisCard}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.analysisLoadingText}>Analyzing drink...</Text>
+            </View>
+          )}
+
+          {analysisResult && !analysisDismissed && (
+            <View style={styles.analysisCard}>
+              <View style={styles.analysisHeader}>
+                <Text style={styles.analysisTitle}>🤖 AI Estimate</Text>
+                <Pressable onPress={() => setAnalysisDismissed(true)}>
+                  <Text style={styles.analysisDismiss}>✕</Text>
+                </Pressable>
+              </View>
+              <View style={styles.analysisBody}>
+                {analysisResult.brand !== 'Unknown' && (
+                  <Text style={styles.analysisBrand}>
+                    {analysisResult.brand} — {analysisResult.drinkName}
+                  </Text>
+                )}
+                {analysisResult.brand === 'Unknown' && (
+                  <Text style={styles.analysisBrand}>{analysisResult.drinkName}</Text>
+                )}
+                <View style={styles.analysisSugarRow}>
+                  <Text style={styles.analysisSugar}>~{analysisResult.sugarGrams}g sugar</Text>
+                  <View style={[styles.confidenceBadge, { backgroundColor: confidenceColor(analysisResult.confidence) + '20' }]}>
+                    <View style={[styles.confidenceDot, { backgroundColor: confidenceColor(analysisResult.confidence) }]} />
+                    <Text style={[styles.confidenceText, { color: confidenceColor(analysisResult.confidence) }]}>
+                      {confidenceLabel(analysisResult.confidence)}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.analysisReasoning}>{analysisResult.reasoning}</Text>
+              </View>
+              <Text style={styles.analysisHint}>Sugar field updated. Adjust if needed.</Text>
+            </View>
+          )}
+
           {/* Sugar & Price */}
           <View style={styles.row}>
             <View style={styles.halfInput}>
               <Text style={styles.label}>Sugar (g)</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  analysisResult && !analysisDismissed && styles.inputHighlighted,
+                ]}
                 value={sugarGrams}
                 onChangeText={setSugarGrams}
                 placeholder="e.g. 35"
@@ -345,6 +441,10 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     color: Colors.text,
   },
+  inputHighlighted: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
   basket: {
     alignItems: 'center',
     padding: Spacing.lg,
@@ -354,4 +454,78 @@ const styles = StyleSheet.create({
   },
   basketEmoji: { fontSize: 48 },
   basketText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '500' },
+  // AI Analysis styles
+  analysisCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    borderWidth: 1.5,
+    borderColor: Colors.primaryLight,
+    gap: Spacing.sm,
+  },
+  analysisHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  analysisTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  analysisDismiss: {
+    fontSize: FontSize.lg,
+    color: Colors.textMuted,
+    paddingHorizontal: Spacing.xs,
+  },
+  analysisLoadingText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  analysisBody: {
+    gap: Spacing.xs,
+  },
+  analysisBrand: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  analysisSugarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  analysisSugar: {
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+    color: Colors.sugar,
+  },
+  confidenceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+  },
+  confidenceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  confidenceText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+  },
+  analysisReasoning: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  analysisHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
 })
