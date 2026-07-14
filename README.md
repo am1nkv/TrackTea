@@ -1,4 +1,4 @@
-# TrackTea
+# TrackTea 🧋
 
 I drink way too much bubble tea and had no idea how much sugar I was actually putting away each month. So I built this to keep myself honest.
 
